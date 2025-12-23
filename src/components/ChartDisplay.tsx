@@ -147,14 +147,14 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
                 <YAxis />
                 <Tooltip />
                 <Legend />
-                {chartData.map((entry: any, index) => (
-                  <Bar
-                    key={`bar-${index}`}
-                    dataKey="value"
-                    fill={entry.color || COLORS[index % COLORS.length]}
-                    name={entry.name}
-                  />
-                ))}
+                <Bar dataKey="value" name="Nilai">
+                  {chartData.map((entry: any, index) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={entry.color || COLORS[index % COLORS.length]}
+                    />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           );
@@ -195,8 +195,10 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
                   type="monotone"
                   dataKey="value"
                   stroke={COLORS[0]}
-                  strokeWidth={2}
+                  strokeWidth={3}
                   name="Nilai"
+                  dot={{ fill: COLORS[0], r: 6 }}
+                  activeDot={{ r: 8 }}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -231,6 +233,12 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
           return (
             <ResponsiveContainer width="100%" height={400}>
               <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={COLORS[0]} stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor={COLORS[0]} stopOpacity={0.1}/>
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" />
                 <YAxis />
@@ -240,7 +248,8 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
                   type="monotone"
                   dataKey="value"
                   stroke={COLORS[0]}
-                  fill={COLORS[0]}
+                  strokeWidth={2}
+                  fill="url(#colorValue)"
                   name="Nilai"
                 />
               </AreaChart>
