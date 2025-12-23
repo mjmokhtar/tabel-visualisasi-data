@@ -1,14 +1,22 @@
-import { useState } from 'react';
-import { Plus, Trash2, Table as TableIcon, PieChart, BarChart3, LineChart, Palette } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Trash2, Table as TableIcon, PieChart, BarChart3, LineChart, Palette, Info } from 'lucide-react';
 import DataTable from './components/DataTable';
 import ChartDisplay from './components/ChartDisplay';
-import { COLOR_THEMES, ColorTheme } from './colorThemes';
+import { COLOR_THEMES } from './colorThemes';
+import { 
+  detectDataType, 
+  getRecommendedCharts, 
+  getDataTypeExplanation,
+  getChartSuitability,
+  DataType 
+} from './dataTypeDetection';
 
 interface TableData {
   name: string;
   columns: string[];
   rows: { [key: string]: string | number }[];
-  colors?: string[]; // Custom colors for each column
+  colors?: string[];
+  dataType?: DataType;
 }
 
 type ChartType = 'table' | 'pie' | 'bar' | 'line' | 'area';
@@ -24,6 +32,10 @@ function App() {
   const [selectedTheme, setSelectedTheme] = useState<string>('Default');
   const [customColors, setCustomColors] = useState<{ [key: string]: string }>({});
   const [useCustomColors, setUseCustomColors] = useState(false);
+  
+  // Data type detection
+  const [dataTypeMode, setDataTypeMode] = useState<DataType>('auto');
+  const [detectedDataType, setDetectedDataType] = useState<DataType | null>(null);
 
   const addColumn = () => {
     setColumns([...columns, '']);
@@ -41,7 +53,6 @@ function App() {
     });
     setRows(newRows);
 
-    // Remove custom color for deleted column
     const newCustomColors = { ...customColors };
     delete newCustomColors[columnName];
     setCustomColors(newCustomColors);
@@ -64,7 +75,6 @@ function App() {
       });
       setRows(newRows);
 
-      // Update custom color key
       if (customColors[oldColumnName]) {
         const newCustomColors = { ...customColors };
         newCustomColors[value] = newCustomColors[oldColumnName];
@@ -101,7 +111,6 @@ function App() {
 
   const getColors = (): string[] => {
     if (useCustomColors) {
-      // Use custom colors, fallback to theme colors for missing ones
       const theme = COLOR_THEMES.find(t => t.name === selectedTheme);
       const themeColors = theme?.colors || COLOR_THEMES[0].colors;
       
@@ -109,7 +118,6 @@ function App() {
         customColors[col] || themeColors[index % themeColors.length]
       );
     } else {
-      // Use selected theme colors
       const theme = COLOR_THEMES.find(t => t.name === selectedTheme);
       return theme?.colors || COLOR_THEMES[0].colors;
     }
@@ -132,11 +140,25 @@ function App() {
       return;
     }
 
+    // Create temporary data for detection
+    const tempData: TableData = {
+      name: tableName,
+      columns: validColumns,
+      rows: validRows,
+    };
+
+    // Auto-detect data type
+    const detection = detectDataType(tempData);
+    const finalDataType = dataTypeMode === 'auto' ? detection.type : dataTypeMode;
+    
+    setDetectedDataType(detection.type);
+
     setTableData({
       name: tableName,
       columns: validColumns,
       rows: validRows,
       colors: getColors(),
+      dataType: finalDataType,
     });
     setViewType('table');
   };
@@ -150,7 +172,19 @@ function App() {
     setSelectedTheme('Default');
     setCustomColors({});
     setUseCustomColors(false);
+    setDataTypeMode('auto');
+    setDetectedDataType(null);
   };
+
+  // Get chart recommendations based on data type
+  const getChartRecommendations = () => {
+    if (!tableData) return { recommended: [], notRecommended: [] };
+    
+    const effectiveDataType = tableData.dataType || 'auto';
+    return getRecommendedCharts(effectiveDataType);
+  };
+
+  const chartRecommendations = getChartRecommendations();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
@@ -184,6 +218,33 @@ function App() {
                 placeholder="Contoh: Penjualan Bulanan"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
               />
+            </div>
+
+            {/* Data Type Selector */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                <Info className="w-4 h-4" />
+                Tipe Data
+              </label>
+              <select
+                value={dataTypeMode}
+                onChange={(e) => setDataTypeMode(e.target.value as DataType)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+              >
+                <option value="auto">Auto Detect</option>
+                <option value="category">Kategori (untuk proporsi/persentase)</option>
+                <option value="timeseries">Time Series (untuk tren)</option>
+                <option value="multiseries">Multi-Series (untuk perbandingan)</option>
+              </select>
+              <p className="mt-2 text-xs text-gray-500">
+                {getDataTypeExplanation(dataTypeMode)}
+              </p>
+              
+              {detectedDataType && dataTypeMode === 'auto' && (
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+                  <strong>Terdeteksi:</strong> {getDataTypeExplanation(detectedDataType)}
+                </div>
+              )}
             </div>
 
             {/* Color Theme Selector */}
@@ -354,63 +415,58 @@ function App() {
               </h2>
 
               {tableData && (
-                <div className="flex flex-wrap gap-2 mb-4">
-                  <button
-                    onClick={() => setViewType('table')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
-                      viewType === 'table'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    <TableIcon className="w-4 h-4" />
-                    Tabel
-                  </button>
-                  <button
-                    onClick={() => setViewType('pie')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
-                      viewType === 'pie'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    <PieChart className="w-4 h-4" />
-                    Pie Chart
-                  </button>
-                  <button
-                    onClick={() => setViewType('bar')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
-                      viewType === 'bar'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    <BarChart3 className="w-4 h-4" />
-                    Bar Chart
-                  </button>
-                  <button
-                    onClick={() => setViewType('line')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
-                      viewType === 'line'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    <LineChart className="w-4 h-4" />
-                    Line Chart
-                  </button>
-                  <button
-                    onClick={() => setViewType('area')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
-                      viewType === 'area'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    <LineChart className="w-4 h-4" />
-                    Area Chart
-                  </button>
-                </div>
+                <>
+                  {/* Chart Type Buttons with Recommendations */}
+                  <div className="mb-4">
+                    <p className="text-xs text-gray-500 mb-2">Chart yang direkomendasikan:</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => setViewType('table')}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
+                          viewType === 'table'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        <TableIcon className="w-4 h-4" />
+                        Tabel
+                      </button>
+                      
+                      {(['pie', 'bar', 'line', 'area'] as const).map((type) => {
+                        const isRecommended = chartRecommendations.recommended.includes(type);
+                        const suitability = getChartSuitability(type, tableData.dataType || 'auto');
+                        const Icon = type === 'pie' ? PieChart : type === 'bar' ? BarChart3 : LineChart;
+                        
+                        return (
+                          <button
+                            key={type}
+                            onClick={() => setViewType(type)}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition relative group ${
+                              viewType === type
+                                ? 'bg-blue-600 text-white'
+                                : isRecommended
+                                ? 'bg-green-50 text-green-700 hover:bg-green-100 border-2 border-green-300'
+                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 opacity-60'
+                            }`}
+                            title={suitability.reason}
+                          >
+                            <Icon className="w-4 h-4" />
+                            {type.charAt(0).toUpperCase() + type.slice(1)}
+                            {isRecommended && (
+                              <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full"></span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    
+                    {viewType !== 'table' && (
+                      <div className="mt-2 text-xs text-gray-500 italic">
+                        {getChartSuitability(viewType as any, tableData.dataType || 'auto').reason}
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
             </div>
 
