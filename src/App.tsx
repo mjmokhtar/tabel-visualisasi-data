@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { Plus, Trash2, Table as TableIcon, PieChart, BarChart3, LineChart } from 'lucide-react';
+import { Plus, Trash2, Table as TableIcon, PieChart, BarChart3, LineChart, Palette } from 'lucide-react';
 import DataTable from './components/DataTable';
 import ChartDisplay from './components/ChartDisplay';
+import { COLOR_THEMES, ColorTheme } from './colorThemes';
 
 interface TableData {
   name: string;
   columns: string[];
   rows: { [key: string]: string | number }[];
+  colors?: string[]; // Custom colors for each column
 }
 
 type ChartType = 'table' | 'pie' | 'bar' | 'line' | 'area';
@@ -17,20 +19,32 @@ function App() {
   const [rows, setRows] = useState<{ [key: string]: string | number }[]>([{}]);
   const [tableData, setTableData] = useState<TableData | null>(null);
   const [viewType, setViewType] = useState<ChartType>('table');
+  
+  // Color customization states
+  const [selectedTheme, setSelectedTheme] = useState<string>('Default');
+  const [customColors, setCustomColors] = useState<{ [key: string]: string }>({});
+  const [useCustomColors, setUseCustomColors] = useState(false);
 
   const addColumn = () => {
     setColumns([...columns, '']);
   };
 
   const removeColumn = (index: number) => {
+    const columnName = columns[index];
     const newColumns = columns.filter((_, i) => i !== index);
     setColumns(newColumns);
+    
     const newRows = rows.map(row => {
       const newRow = { ...row };
-      delete newRow[columns[index]];
+      delete newRow[columnName];
       return newRow;
     });
     setRows(newRows);
+
+    // Remove custom color for deleted column
+    const newCustomColors = { ...customColors };
+    delete newCustomColors[columnName];
+    setCustomColors(newCustomColors);
   };
 
   const updateColumn = (index: number, value: string) => {
@@ -49,7 +63,22 @@ function App() {
         return newRow;
       });
       setRows(newRows);
+
+      // Update custom color key
+      if (customColors[oldColumnName]) {
+        const newCustomColors = { ...customColors };
+        newCustomColors[value] = newCustomColors[oldColumnName];
+        delete newCustomColors[oldColumnName];
+        setCustomColors(newCustomColors);
+      }
     }
+  };
+
+  const updateColumnColor = (columnName: string, color: string) => {
+    setCustomColors({
+      ...customColors,
+      [columnName]: color,
+    });
   };
 
   const addRow = () => {
@@ -68,6 +97,22 @@ function App() {
       [columnName]: value,
     };
     setRows(newRows);
+  };
+
+  const getColors = (): string[] => {
+    if (useCustomColors) {
+      // Use custom colors, fallback to theme colors for missing ones
+      const theme = COLOR_THEMES.find(t => t.name === selectedTheme);
+      const themeColors = theme?.colors || COLOR_THEMES[0].colors;
+      
+      return columns.map((col, index) => 
+        customColors[col] || themeColors[index % themeColors.length]
+      );
+    } else {
+      // Use selected theme colors
+      const theme = COLOR_THEMES.find(t => t.name === selectedTheme);
+      return theme?.colors || COLOR_THEMES[0].colors;
+    }
   };
 
   const generateTable = () => {
@@ -91,6 +136,7 @@ function App() {
       name: tableName,
       columns: validColumns,
       rows: validRows,
+      colors: getColors(),
     });
     setViewType('table');
   };
@@ -101,6 +147,9 @@ function App() {
     setRows([{}]);
     setTableData(null);
     setViewType('table');
+    setSelectedTheme('Default');
+    setCustomColors({});
+    setUseCustomColors(false);
   };
 
   return (
@@ -137,6 +186,51 @@ function App() {
               />
             </div>
 
+            {/* Color Theme Selector */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                <Palette className="w-4 h-4" />
+                Tema Warna
+              </label>
+              <select
+                value={selectedTheme}
+                onChange={(e) => setSelectedTheme(e.target.value)}
+                disabled={useCustomColors}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition disabled:bg-gray-100 disabled:cursor-not-allowed"
+              >
+                {COLOR_THEMES.map((theme) => (
+                  <option key={theme.name} value={theme.name}>
+                    {theme.name}
+                  </option>
+                ))}
+              </select>
+              
+              {/* Color Preview */}
+              <div className="mt-3 flex gap-2">
+                {COLOR_THEMES.find(t => t.name === selectedTheme)?.colors.slice(0, 8).map((color, index) => (
+                  <div
+                    key={index}
+                    className="w-8 h-8 rounded border-2 border-gray-200"
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+
+              {/* Custom Color Toggle */}
+              <div className="mt-3 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="useCustom"
+                  checked={useCustomColors}
+                  onChange={(e) => setUseCustomColors(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <label htmlFor="useCustom" className="text-sm text-gray-700 cursor-pointer">
+                  Gunakan warna kustom
+                </label>
+              </div>
+            </div>
+
             {/* Columns */}
             <div className="mb-6">
               <div className="flex items-center justify-between mb-2">
@@ -161,6 +255,20 @@ function App() {
                       placeholder={`Kolom ${index + 1}`}
                       className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                     />
+                    
+                    {/* Custom Color Picker */}
+                    {useCustomColors && col.trim() !== '' && (
+                      <div className="relative">
+                        <input
+                          type="color"
+                          value={customColors[col] || '#3B82F6'}
+                          onChange={(e) => updateColumnColor(col, e.target.value)}
+                          className="w-12 h-10 rounded-lg border-2 border-gray-300 cursor-pointer"
+                          title="Pilih warna"
+                        />
+                      </div>
+                    )}
+                    
                     {columns.length > 1 && (
                       <button
                         onClick={() => removeColumn(index)}
