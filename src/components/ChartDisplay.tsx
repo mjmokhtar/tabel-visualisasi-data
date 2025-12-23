@@ -170,8 +170,8 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
                 <XAxis dataKey="name" />
                 <YAxis />
                 <Tooltip />
-                <Legend payload={legendPayload} />
-                <Bar dataKey="value">
+                <Legend payload={legendPayload} iconType="rect" />
+                <Bar dataKey="value" legendType="none">
                   {chartData.map((entry: any, index) => (
                     <Cell
                       key={`cell-${index}`}
