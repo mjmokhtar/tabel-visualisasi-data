@@ -1,13 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Plus, Trash2, Table as TableIcon, PieChart, BarChart3, LineChart, Palette, Info } from 'lucide-react';
 import DataTable from './components/DataTable';
 import ChartDisplay from './components/ChartDisplay';
 import { COLOR_THEMES } from './colorThemes';
 import { 
-  detectDataType, 
-  getRecommendedCharts, 
-  getDataTypeExplanation,
+  getDataTypeInfo, 
   getChartSuitability,
+  isChartEnabled,
   DataType 
 } from './dataTypeDetection';
 
@@ -33,9 +32,8 @@ function App() {
   const [customColors, setCustomColors] = useState<{ [key: string]: string }>({});
   const [useCustomColors, setUseCustomColors] = useState(false);
   
-  // Data type detection
-  const [dataTypeMode, setDataTypeMode] = useState<DataType>('auto');
-  const [detectedDataType, setDetectedDataType] = useState<DataType | null>(null);
+  // Data type - MANUAL ONLY (no auto-detect)
+  const [dataTypeMode, setDataTypeMode] = useState<DataType>('category');
 
   const addColumn = () => {
     setColumns([...columns, '']);
@@ -140,27 +138,29 @@ function App() {
       return;
     }
 
-    // Create temporary data for detection
-    const tempData: TableData = {
-      name: tableName,
-      columns: validColumns,
-      rows: validRows,
-    };
+    // Validation based on data type
+    if (dataTypeMode === 'category' && validRows.length !== 1) {
+      alert('Tipe Kategori harus memiliki tepat 1 baris data');
+      return;
+    }
 
-    // Auto-detect data type
-    const detection = detectDataType(tempData);
-    const finalDataType = dataTypeMode === 'auto' ? detection.type : dataTypeMode;
-    
-    setDetectedDataType(detection.type);
+    if ((dataTypeMode === 'timeseries' || dataTypeMode === 'multiseries') && validRows.length < 2) {
+      alert('Tipe Time Series dan Multi-Series memerlukan minimal 2 baris data');
+      return;
+    }
 
     setTableData({
       name: tableName,
       columns: validColumns,
       rows: validRows,
       colors: getColors(),
-      dataType: finalDataType,
+      dataType: dataTypeMode,
     });
-    setViewType('table');
+    
+    // Auto-select appropriate default view
+    const dataTypeInfo = getDataTypeInfo(dataTypeMode);
+    const defaultChart = dataTypeInfo.recommendedCharts[0];
+    setViewType(defaultChart as ChartType);
   };
 
   const resetForm = () => {
@@ -172,19 +172,10 @@ function App() {
     setSelectedTheme('Default');
     setCustomColors({});
     setUseCustomColors(false);
-    setDataTypeMode('auto');
-    setDetectedDataType(null);
+    setDataTypeMode('category');
   };
 
-  // Get chart recommendations based on data type
-  const getChartRecommendations = () => {
-    if (!tableData) return { recommended: [], notRecommended: [] };
-    
-    const effectiveDataType = tableData.dataType || 'auto';
-    return getRecommendedCharts(effectiveDataType);
-  };
-
-  const chartRecommendations = getChartRecommendations();
+  const dataTypeInfo = getDataTypeInfo(dataTypeMode);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
@@ -220,7 +211,7 @@ function App() {
               />
             </div>
 
-            {/* Data Type Selector */}
+            {/* Data Type Selector - MANUAL ONLY */}
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                 <Info className="w-4 h-4" />
@@ -231,20 +222,22 @@ function App() {
                 onChange={(e) => setDataTypeMode(e.target.value as DataType)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
               >
-                <option value="auto">Auto Detect</option>
-                <option value="category">Kategori (untuk proporsi/persentase)</option>
-                <option value="timeseries">Time Series (untuk tren)</option>
-                <option value="multiseries">Multi-Series (untuk perbandingan)</option>
+                <option value="category">Kategori (1 baris, banyak kolom)</option>
+                <option value="timeseries">Time Series (sensor/monitoring)</option>
+                <option value="multiseries">Multi-Series (perbandingan)</option>
               </select>
-              <p className="mt-2 text-xs text-gray-500">
-                {getDataTypeExplanation(dataTypeMode)}
-              </p>
               
-              {detectedDataType && dataTypeMode === 'auto' && (
-                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
-                  <strong>Terdeteksi:</strong> {getDataTypeExplanation(detectedDataType)}
-                </div>
-              )}
+              {/* Info Box */}
+              <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs text-blue-700 mb-2">
+                  <strong>{dataTypeInfo.description}</strong>
+                </p>
+                <p className="text-xs text-blue-600">
+                  Chart yang cocok: {dataTypeInfo.recommendedCharts.map(c => 
+                    c.charAt(0).toUpperCase() + c.slice(1)
+                  ).join(', ')}
+                </p>
+              </div>
             </div>
 
             {/* Color Theme Selector */}
@@ -416,56 +409,60 @@ function App() {
 
               {tableData && (
                 <>
-                  {/* Chart Type Buttons with Recommendations */}
-                  <div className="mb-4">
-                    <p className="text-xs text-gray-500 mb-2">Chart yang direkomendasikan:</p>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => setViewType('table')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
-                          viewType === 'table'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <TableIcon className="w-4 h-4" />
-                        Tabel
-                      </button>
-                      
-                      {(['pie', 'bar', 'line', 'area'] as const).map((type) => {
-                        const isRecommended = chartRecommendations.recommended.includes(type);
-                        const suitability = getChartSuitability(type, tableData.dataType || 'auto');
-                        const Icon = type === 'pie' ? PieChart : type === 'bar' ? BarChart3 : LineChart;
-                        
-                        return (
-                          <button
-                            key={type}
-                            onClick={() => setViewType(type)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition relative group ${
-                              viewType === type
-                                ? 'bg-blue-600 text-white'
-                                : isRecommended
-                                ? 'bg-green-50 text-green-700 hover:bg-green-100 border-2 border-green-300'
-                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 opacity-60'
-                            }`}
-                            title={suitability.reason}
-                          >
-                            <Icon className="w-4 h-4" />
-                            {type.charAt(0).toUpperCase() + type.slice(1)}
-                            {isRecommended && (
-                              <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full"></span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Chart yang direkomendasikan:
+                  </p>
+                  
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <button
+                      onClick={() => setViewType('table')}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
+                        viewType === 'table'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      <TableIcon className="w-4 h-4" />
+                      Tabel
+                    </button>
                     
-                    {viewType !== 'table' && (
-                      <div className="mt-2 text-xs text-gray-500 italic">
-                        {getChartSuitability(viewType as any, tableData.dataType || 'auto').reason}
-                      </div>
-                    )}
+                    {(['pie', 'bar', 'line', 'area'] as const).map((type) => {
+                      const enabled = isChartEnabled(type, tableData.dataType!);
+                      const suitability = getChartSuitability(type, tableData.dataType!);
+                      const isRecommended = dataTypeInfo.recommendedCharts.includes(type);
+                      const Icon = type === 'pie' ? PieChart : type === 'bar' ? BarChart3 : LineChart;
+                      
+                      return (
+                        <button
+                          key={type}
+                          onClick={() => enabled && setViewType(type)}
+                          disabled={!enabled}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition relative group ${
+                            viewType === type
+                              ? 'bg-blue-600 text-white'
+                              : enabled && isRecommended
+                              ? 'bg-green-50 text-green-700 hover:bg-green-100 border-2 border-green-300'
+                              : enabled
+                              ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                              : 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-50'
+                          }`}
+                          title={suitability.reason}
+                        >
+                          <Icon className="w-4 h-4" />
+                          {type.charAt(0).toUpperCase() + type.slice(1)}
+                          {enabled && isRecommended && (
+                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full"></span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
+                  
+                  {viewType !== 'table' && (
+                    <div className="text-xs text-gray-500 italic">
+                      {getChartSuitability(viewType as any, tableData.dataType!).reason}
+                    </div>
+                  )}
                 </>
               )}
             </div>
