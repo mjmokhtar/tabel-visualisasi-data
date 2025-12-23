@@ -20,7 +20,8 @@ interface TableData {
   name: string;
   columns: string[];
   rows: { [key: string]: string | number }[];
-  colors?: string[]; // Custom colors array
+  colors?: string[];
+  dataType?: 'category' | 'timeseries' | 'multiseries';
 }
 
 interface ChartDisplayProps {
@@ -44,24 +45,57 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
   // Use custom colors from data or fall back to default
   const COLORS = data.colors || DEFAULT_COLORS;
 
-  // Check if we have single row with multiple columns (transpose case)
-  const isSingleRowMultipleColumns = data.rows.length === 1 && data.columns.length > 1;
-
   const prepareChartData = () => {
-    // If single row with multiple columns, transpose the data
-    // Convert columns to rows for proper visualization
-    if (isSingleRowMultipleColumns) {
-      return data.columns.map((col, index) => {
-        const value = data.rows[0][col];
-        return {
-          name: col,
-          value: typeof value === 'string' ? Number(value) || 0 : value || 0,
-          color: COLORS[index % COLORS.length], // Assign color
+    const dataType = data.dataType || 'category';
+
+    // CATEGORY: Single row, multiple columns -> transpose
+    if (dataType === 'category') {
+      if (data.rows.length === 1 && data.columns.length > 1) {
+        return data.columns.map((col, index) => {
+          const value = data.rows[0][col];
+          return {
+            name: col,
+            value: typeof value === 'string' ? Number(value) || 0 : value || 0,
+            color: COLORS[index % COLORS.length],
+          };
+        });
+      }
+    }
+
+    // TIME SERIES: All columns are metrics, create index-based x-axis
+    if (dataType === 'timeseries') {
+      return data.rows.map((row, rowIndex) => {
+        const chartRow: { [key: string]: string | number } = {
+          index: rowIndex + 1, // Auto-generated index (1, 2, 3...)
+          indexLabel: `Baris ${rowIndex + 1}`, // Label for display
         };
+        
+        data.columns.forEach((col) => {
+          const value = row[col];
+          chartRow[col] = typeof value === 'string' ? Number(value) || 0 : value || 0;
+        });
+        
+        return chartRow;
       });
     }
 
-    // Normal case: multiple rows
+    // MULTI-SERIES: First column is label, rest are metrics
+    if (dataType === 'multiseries') {
+      return data.rows.map((row) => {
+        const chartRow: { [key: string]: string | number } = {};
+        data.columns.forEach((col) => {
+          const value = row[col];
+          if (typeof value === 'string' && !isNaN(Number(value))) {
+            chartRow[col] = Number(value);
+          } else {
+            chartRow[col] = value || '';
+          }
+        });
+        return chartRow;
+      });
+    }
+
+    // Default fallback
     return data.rows.map((row) => {
       const chartRow: { [key: string]: string | number } = {};
       data.columns.forEach((col) => {
@@ -76,38 +110,21 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
     });
   };
 
-  const preparePieData = () => {
-    // If single row with multiple columns, each column becomes a pie slice
-    if (isSingleRowMultipleColumns) {
-      return data.columns.map((col, index) => {
-        const value = data.rows[0][col];
-        return {
-          name: col,
-          value: typeof value === 'string' ? Number(value) || 0 : value || 0,
-          color: COLORS[index % COLORS.length],
-        };
-      });
-    }
-
-    // Normal case: use first column as label, second as value
-    const labelColumn = data.columns[0];
-    const valueColumn = data.columns[1] || data.columns[0];
-
-    return data.rows.map((row, index) => {
-      const value = row[valueColumn];
-      return {
-        name: String(row[labelColumn] || 'Unknown'),
-        value: typeof value === 'string' ? Number(value) || 0 : value || 0,
-        color: COLORS[index % COLORS.length],
-      };
-    });
-  };
-
-  const chartData = chartType === 'pie' ? preparePieData() : prepareChartData();
+  const chartData = prepareChartData();
+  const dataType = data.dataType || 'category';
 
   const renderChart = () => {
     switch (chartType) {
       case 'pie':
+        // Only for category type
+        if (dataType !== 'category') {
+          return (
+            <div className="flex items-center justify-center h-96 text-gray-500">
+              Pie chart hanya tersedia untuk tipe data Kategori
+            </div>
+          );
+        }
+
         return (
           <ResponsiveContainer width="100%" height={400}>
             <PieChart>
@@ -137,8 +154,15 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
         );
 
       case 'bar':
-        // For single row transpose case, use 'name' as X-axis
-        if (isSingleRowMultipleColumns) {
+        if (dataType === 'category') {
+          // Category: Each column becomes a bar
+          const legendPayload = chartData.map((entry: any, index) => ({
+            value: entry.name,
+            type: 'rect' as const,
+            color: entry.color || COLORS[index % COLORS.length],
+            id: entry.name,
+          }));
+
           return (
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={chartData}>
@@ -146,8 +170,8 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
                 <XAxis dataKey="name" />
                 <YAxis />
                 <Tooltip />
-                <Legend />
-                <Bar dataKey="value" name="Nilai">
+                <Legend payload={legendPayload} />
+                <Bar dataKey="value">
                   {chartData.map((entry: any, index) => (
                     <Cell
                       key={`cell-${index}`}
@@ -160,7 +184,29 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
           );
         }
 
-        // Normal case: first column as X-axis, rest as bars
+        if (dataType === 'timeseries') {
+          // Time series: All columns as separate bars
+          return (
+            <ResponsiveContainer width="100%" height={400}>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="indexLabel" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                {data.columns.map((col, index) => (
+                  <Bar
+                    key={col}
+                    dataKey={col}
+                    fill={COLORS[index % COLORS.length]}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          );
+        }
+
+        // Multi-series: First column as X-axis, rest as bars
         return (
           <ResponsiveContainer width="100%" height={400}>
             <BarChart data={chartData}>
@@ -181,31 +227,41 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
         );
 
       case 'line':
-        // For single row transpose case, use 'name' as X-axis
-        if (isSingleRowMultipleColumns) {
+        if (dataType === 'category') {
+          return (
+            <div className="flex items-center justify-center h-96 text-gray-500">
+              Line chart tidak cocok untuk tipe data Kategori
+            </div>
+          );
+        }
+
+        if (dataType === 'timeseries') {
+          // Time series: All columns as separate lines
           return (
             <ResponsiveContainer width="100%" height={400}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
+                <XAxis dataKey="indexLabel" />
                 <YAxis />
                 <Tooltip />
                 <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke={COLORS[0]}
-                  strokeWidth={3}
-                  name="Nilai"
-                  dot={{ fill: COLORS[0], r: 6 }}
-                  activeDot={{ r: 8 }}
-                />
+                {data.columns.map((col, index) => (
+                  <Line
+                    key={col}
+                    type="monotone"
+                    dataKey={col}
+                    stroke={COLORS[index % COLORS.length]}
+                    strokeWidth={3}
+                    dot={{ fill: COLORS[index % COLORS.length], r: 6 }}
+                    activeDot={{ r: 8 }}
+                  />
+                ))}
               </LineChart>
             </ResponsiveContainer>
           );
         }
 
-        // Normal case: first column as X-axis, rest as lines
+        // Multi-series: First column as X-axis, rest as lines
         return (
           <ResponsiveContainer width="100%" height={400}>
             <LineChart data={chartData}>
@@ -220,7 +276,9 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
                   type="monotone"
                   dataKey={col}
                   stroke={COLORS[index % COLORS.length]}
-                  strokeWidth={2}
+                  strokeWidth={3}
+                  dot={{ fill: COLORS[index % COLORS.length], r: 6 }}
+                  activeDot={{ r: 8 }}
                 />
               ))}
             </LineChart>
@@ -228,39 +286,59 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
         );
 
       case 'area':
-        // For single row transpose case, use 'name' as X-axis
-        if (isSingleRowMultipleColumns) {
+        if (dataType === 'category') {
+          return (
+            <div className="flex items-center justify-center h-96 text-gray-500">
+              Area chart tidak cocok untuk tipe data Kategori
+            </div>
+          );
+        }
+
+        if (dataType === 'timeseries') {
+          // Time series: All columns as separate areas
           return (
             <ResponsiveContainer width="100%" height={400}>
               <AreaChart data={chartData}>
                 <defs>
-                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={COLORS[0]} stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor={COLORS[0]} stopOpacity={0.1}/>
-                  </linearGradient>
+                  {data.columns.map((col, index) => (
+                    <linearGradient key={col} id={`gradient-${col}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={COLORS[index % COLORS.length]} stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor={COLORS[index % COLORS.length]} stopOpacity={0.1}/>
+                    </linearGradient>
+                  ))}
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
+                <XAxis dataKey="indexLabel" />
                 <YAxis />
                 <Tooltip />
                 <Legend />
-                <Area
-                  type="monotone"
-                  dataKey="value"
-                  stroke={COLORS[0]}
-                  strokeWidth={2}
-                  fill="url(#colorValue)"
-                  name="Nilai"
-                />
+                {data.columns.map((col, index) => (
+                  <Area
+                    key={col}
+                    type="monotone"
+                    dataKey={col}
+                    stroke={COLORS[index % COLORS.length]}
+                    strokeWidth={2}
+                    fill={`url(#gradient-${col})`}
+                  />
+                ))}
               </AreaChart>
             </ResponsiveContainer>
           );
         }
 
-        // Normal case: first column as X-axis, rest as areas
+        // Multi-series: First column as X-axis, rest as areas (stacked)
         return (
           <ResponsiveContainer width="100%" height={400}>
             <AreaChart data={chartData}>
+              <defs>
+                {data.columns.slice(1).map((col, index) => (
+                  <linearGradient key={col} id={`gradient-${col}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={COLORS[index % COLORS.length]} stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor={COLORS[index % COLORS.length]} stopOpacity={0.1}/>
+                  </linearGradient>
+                ))}
+              </defs>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey={data.columns[0]} />
               <YAxis />
@@ -273,7 +351,8 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
                   dataKey={col}
                   stackId="1"
                   stroke={COLORS[index % COLORS.length]}
-                  fill={COLORS[index % COLORS.length]}
+                  strokeWidth={2}
+                  fill={`url(#gradient-${col})`}
                 />
               ))}
             </AreaChart>
