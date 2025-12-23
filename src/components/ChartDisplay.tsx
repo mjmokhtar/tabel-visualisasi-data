@@ -20,6 +20,7 @@ interface TableData {
   name: string;
   columns: string[];
   rows: { [key: string]: string | number }[];
+  colors?: string[]; // Custom colors array
 }
 
 interface ChartDisplayProps {
@@ -27,7 +28,8 @@ interface ChartDisplayProps {
   chartType: 'pie' | 'bar' | 'line' | 'area';
 }
 
-const COLORS = [
+// Default colors (fallback)
+const DEFAULT_COLORS = [
   '#3B82F6',
   '#10B981',
   '#F59E0B',
@@ -39,6 +41,9 @@ const COLORS = [
 ];
 
 export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
+  // Use custom colors from data or fall back to default
+  const COLORS = data.colors || DEFAULT_COLORS;
+
   // Check if we have single row with multiple columns (transpose case)
   const isSingleRowMultipleColumns = data.rows.length === 1 && data.columns.length > 1;
 
@@ -46,11 +51,12 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
     // If single row with multiple columns, transpose the data
     // Convert columns to rows for proper visualization
     if (isSingleRowMultipleColumns) {
-      return data.columns.map((col) => {
+      return data.columns.map((col, index) => {
         const value = data.rows[0][col];
         return {
           name: col,
           value: typeof value === 'string' ? Number(value) || 0 : value || 0,
+          color: COLORS[index % COLORS.length], // Assign color
         };
       });
     }
@@ -73,11 +79,12 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
   const preparePieData = () => {
     // If single row with multiple columns, each column becomes a pie slice
     if (isSingleRowMultipleColumns) {
-      return data.columns.map((col) => {
+      return data.columns.map((col, index) => {
         const value = data.rows[0][col];
         return {
           name: col,
           value: typeof value === 'string' ? Number(value) || 0 : value || 0,
+          color: COLORS[index % COLORS.length],
         };
       });
     }
@@ -86,11 +93,12 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
     const labelColumn = data.columns[0];
     const valueColumn = data.columns[1] || data.columns[0];
 
-    return data.rows.map((row) => {
+    return data.rows.map((row, index) => {
       const value = row[valueColumn];
       return {
         name: String(row[labelColumn] || 'Unknown'),
         value: typeof value === 'string' ? Number(value) || 0 : value || 0,
+        color: COLORS[index % COLORS.length],
       };
     });
   };
@@ -115,10 +123,10 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
                 fill="#8884d8"
                 dataKey="value"
               >
-                {chartData.map((entry, index) => (
+                {chartData.map((entry: any, index) => (
                   <Cell
                     key={`cell-${index}`}
-                    fill={COLORS[index % COLORS.length]}
+                    fill={entry.color || COLORS[index % COLORS.length]}
                   />
                 ))}
               </Pie>
@@ -139,7 +147,14 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
                 <YAxis />
                 <Tooltip />
                 <Legend />
-                <Bar dataKey="value" fill={COLORS[0]} name="Nilai" />
+                {chartData.map((entry: any, index) => (
+                  <Bar
+                    key={`bar-${index}`}
+                    dataKey="value"
+                    fill={entry.color || COLORS[index % COLORS.length]}
+                    name={entry.name}
+                  />
+                ))}
               </BarChart>
             </ResponsiveContainer>
           );
