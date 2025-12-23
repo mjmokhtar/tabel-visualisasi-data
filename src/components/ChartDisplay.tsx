@@ -39,7 +39,23 @@ const COLORS = [
 ];
 
 export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
+  // Check if we have single row with multiple columns (transpose case)
+  const isSingleRowMultipleColumns = data.rows.length === 1 && data.columns.length > 1;
+
   const prepareChartData = () => {
+    // If single row with multiple columns, transpose the data
+    // Convert columns to rows for proper visualization
+    if (isSingleRowMultipleColumns) {
+      return data.columns.map((col) => {
+        const value = data.rows[0][col];
+        return {
+          name: col,
+          value: typeof value === 'string' ? Number(value) || 0 : value || 0,
+        };
+      });
+    }
+
+    // Normal case: multiple rows
     return data.rows.map((row) => {
       const chartRow: { [key: string]: string | number } = {};
       data.columns.forEach((col) => {
@@ -55,6 +71,18 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
   };
 
   const preparePieData = () => {
+    // If single row with multiple columns, each column becomes a pie slice
+    if (isSingleRowMultipleColumns) {
+      return data.columns.map((col) => {
+        const value = data.rows[0][col];
+        return {
+          name: col,
+          value: typeof value === 'string' ? Number(value) || 0 : value || 0,
+        };
+      });
+    }
+
+    // Normal case: use first column as label, second as value
     const labelColumn = data.columns[0];
     const valueColumn = data.columns[1] || data.columns[0];
 
@@ -68,7 +96,6 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
   };
 
   const chartData = chartType === 'pie' ? preparePieData() : prepareChartData();
-  const dataColumns = data.columns;
 
   const renderChart = () => {
     switch (chartType) {
@@ -102,6 +129,23 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
         );
 
       case 'bar':
+        // For single row transpose case, use 'name' as X-axis
+        if (isSingleRowMultipleColumns) {
+          return (
+            <ResponsiveContainer width="100%" height={400}>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="value" fill={COLORS[0]} name="Nilai" />
+              </BarChart>
+            </ResponsiveContainer>
+          );
+        }
+
+        // Normal case: first column as X-axis, rest as bars
         return (
           <ResponsiveContainer width="100%" height={400}>
             <BarChart data={chartData}>
@@ -110,7 +154,7 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
               <YAxis />
               <Tooltip />
               <Legend />
-              {dataColumns.slice(1).map((col, index) => (
+              {data.columns.slice(1).map((col, index) => (
                 <Bar
                   key={col}
                   dataKey={col}
@@ -122,6 +166,29 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
         );
 
       case 'line':
+        // For single row transpose case, use 'name' as X-axis
+        if (isSingleRowMultipleColumns) {
+          return (
+            <ResponsiveContainer width="100%" height={400}>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke={COLORS[0]}
+                  strokeWidth={2}
+                  name="Nilai"
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          );
+        }
+
+        // Normal case: first column as X-axis, rest as lines
         return (
           <ResponsiveContainer width="100%" height={400}>
             <LineChart data={chartData}>
@@ -130,7 +197,7 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
               <YAxis />
               <Tooltip />
               <Legend />
-              {dataColumns.slice(1).map((col, index) => (
+              {data.columns.slice(1).map((col, index) => (
                 <Line
                   key={col}
                   type="monotone"
@@ -144,6 +211,29 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
         );
 
       case 'area':
+        // For single row transpose case, use 'name' as X-axis
+        if (isSingleRowMultipleColumns) {
+          return (
+            <ResponsiveContainer width="100%" height={400}>
+              <AreaChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Area
+                  type="monotone"
+                  dataKey="value"
+                  stroke={COLORS[0]}
+                  fill={COLORS[0]}
+                  name="Nilai"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          );
+        }
+
+        // Normal case: first column as X-axis, rest as areas
         return (
           <ResponsiveContainer width="100%" height={400}>
             <AreaChart data={chartData}>
@@ -152,7 +242,7 @@ export default function ChartDisplay({ data, chartType }: ChartDisplayProps) {
               <YAxis />
               <Tooltip />
               <Legend />
-              {dataColumns.slice(1).map((col, index) => (
+              {data.columns.slice(1).map((col, index) => (
                 <Area
                   key={col}
                   type="monotone"
