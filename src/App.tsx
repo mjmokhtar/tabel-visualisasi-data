@@ -144,6 +144,13 @@ function App() {
       return;
     }
 
+    if (dataTypeMode === 'category') {
+      if (validColumns.length < 2) {
+        alert('Tipe Kategori memerlukan minimal 2 kolom');
+        return;
+      }
+    }
+
     if ((dataTypeMode === 'timeseries' || dataTypeMode === 'multiseries') && validRows.length < 2) {
       alert('Tipe Time Series dan Multi-Series memerlukan minimal 2 baris data');
       return;
